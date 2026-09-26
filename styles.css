@@ -163,6 +163,21 @@ button { cursor: pointer; touch-action: manipulation; }
 
 .count.full { color: var(--green); border-color: var(--green-dim); }
 
+.delete-btn {
+  flex: none;
+  min-width: 42px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  border: 1px solid #4a2028;
+  background: #24121a;
+  color: #ff9aa3;
+  padding: 0;
+}
+
+.delete-btn:active { background: #3a1a24; color: #ffc4ca; }
+
 .count.bump { animation: bump 0.22s ease-out; }
 
 @keyframes bump {

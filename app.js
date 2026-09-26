@@ -11,6 +11,11 @@
   var RED_SUITS = { H: true, D: true };
   var SUIT_CYCLE = ["S", "H", "D", "C"];
   var COLOR_CYCLE = ["p1", "p2", "p3", "p4"];
+  var TRASH_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    '<path d="M3.5 6.5h17M9 6.5V4.8A1.3 1.3 0 0 1 10.3 3.5h3.4A1.3 1.3 0 0 1 15 4.8v1.7"/>' +
+    '<path d="M18.4 6.5l-.8 12.1a1.9 1.9 0 0 1-1.9 1.8H8.3a1.9 1.9 0 0 1-1.9-1.8L5.6 6.5"/>' +
+    '<path d="M10 10.5v6M14 10.5v6"/></svg>';
 
   var state = {
     players: [],
@@ -72,8 +77,36 @@
     return player.name || "Player " + (index + 1);
   }
 
+  function panelFor(player) {
+    var index = state.players.indexOf(player);
+    return index < 0 ? null : refs.players[index];
+  }
+
+  function nextColor() {
+    var used = {};
+    state.players.forEach(function (player) {
+      used[player.key] = true;
+    });
+    for (var i = 0; i < COLOR_CYCLE.length; i++) {
+      if (!used[COLOR_CYCLE[i]]) return COLOR_CYCLE[i];
+    }
+    return COLOR_CYCLE[state.players.length % COLOR_CYCLE.length];
+  }
+
+  function nextName() {
+    var used = {};
+    state.players.forEach(function (player) {
+      used[player.name] = true;
+    });
+    for (var i = 1; i < 100; i++) {
+      if (!used["Player " + i]) return "Player " + i;
+    }
+    return "Player " + (state.players.length + 1);
+  }
+
   function buildPanel(player, index) {
-    var color = COLOR_CYCLE[index % COLOR_CYCLE.length];
+    var color = player.key || COLOR_CYCLE[index % COLOR_CYCLE.length];
+    player.key = color;
     var panel = el("section", "panel player " + color);
     panel.dataset.player = String(index);
 
@@ -86,23 +119,35 @@
     name.setAttribute("aria-label", "Name of player " + (index + 1));
     name.addEventListener("input", function () {
       player.name = name.value;
+      if (deleteBtn) deleteBtn.setAttribute("aria-label", "Remove " + displayName(player, state.players.indexOf(player)));
       persistHands();
       renderResult();
       renderHistory();
     });
 
     var count = el("span", "count", "0/3");
+    var deleteBtn = null;
+    if (index > 0) {
+      deleteBtn = el("button", "delete-btn", TRASH_ICON);
+      deleteBtn.type = "button";
+      deleteBtn.setAttribute("aria-label", "Remove " + displayName(player, index));
+      deleteBtn.setAttribute("title", "Remove this player");
+      deleteBtn.addEventListener("click", function () {
+        removePlayer(player);
+      });
+    }
+
     var reset = el("button", "reset-btn", "Reset");
     reset.type = "button";
     reset.setAttribute("aria-label", "Clear " + displayName(player, index) + "'s cards");
     reset.addEventListener("click", function () {
       player.cards = [];
-      syncPanel(index);
+      syncPanel(player);
       renderResult();
     });
 
     head.appendChild(name);
-    head.appendChild(count);
+    head.appendChild(deleteBtn || count);
     head.appendChild(reset);
 
     var slots = el("div", "slots");
@@ -114,7 +159,7 @@
         slot.addEventListener("click", function () {
           if (!player.cards[slotIndex]) return;
           player.cards.splice(slotIndex, 1);
-          syncPanel(index);
+          syncPanel(player);
           renderResult();
         });
         slots.appendChild(slot);
@@ -153,7 +198,7 @@
       btn.dataset.rank = rank;
       btn.setAttribute("aria-label", "Add " + TP.rankLabel(rank) + " of the selected suit");
       btn.addEventListener("click", function () {
-        addCard(index, rank);
+        addCard(player, rank);
       });
       ranks.appendChild(btn);
       rankNodes[rank] = btn;
@@ -173,7 +218,7 @@
       btn.setAttribute("aria-label", suit.name);
       btn.addEventListener("click", function () {
         player.suit = suit.id;
-        syncPanel(index);
+        syncPanel(player);
       });
       suitGroup.appendChild(btn);
       suitNodes[suit.id] = btn;
@@ -190,7 +235,7 @@
       btn.dataset.rank = rank;
       btn.setAttribute("aria-label", "Add " + rank + " of the selected suit");
       btn.addEventListener("click", function () {
-        addCard(index, rank);
+        addCard(player, rank);
       });
       nums.appendChild(btn);
       numNodes.push(btn);
@@ -207,6 +252,8 @@
       color: color,
       name: name,
       count: count,
+      deleteBtn: deleteBtn,
+      reset: reset,
       slots: slotNodes,
       picker: picker,
       rankNodes: rankNodes,
@@ -224,8 +271,8 @@
   function addPlayer(scroll) {
     var index = state.players.length;
     var player = {
-      key: COLOR_CYCLE[index % COLOR_CYCLE.length],
-      name: "Player " + (index + 1),
+      key: nextColor(),
+      name: nextName(),
       suit: SUIT_CYCLE[index % SUIT_CYCLE.length],
       cards: []
     };
@@ -234,7 +281,7 @@
     var ui = buildPanel(player, index);
     refs.players.push(ui);
     refs.mount.appendChild(ui.panel);
-    syncPanel(index);
+    syncPanel(player);
     renderResult();
 
     if (scroll && ui.panel.scrollIntoView) {
@@ -243,29 +290,69 @@
     return ui;
   }
 
-  function addCard(index, rank) {
-    var player = state.players[index];
+  function removePlayer(player) {
+    if (state.players.length <= 1) return;
+    var index = state.players.indexOf(player);
+    if (index <= 0) return;
+
+    var ui = refs.players[index];
+    if (ui && ui.panel.parentNode) ui.panel.parentNode.removeChild(ui.panel);
+    state.players.splice(index, 1);
+    refs.players.splice(index, 1);
+
+    state.lastCommitted = "";
+    rebuildStrengthSigs();
+    state.players.forEach(function (rest, i) {
+      var restUi = refs.players[i];
+      if (!restUi) return;
+      restUi.reset.setAttribute("aria-label", "Clear " + displayName(rest, i) + "'s cards");
+      if (restUi.deleteBtn) {
+        restUi.deleteBtn.setAttribute("aria-label", "Remove " + displayName(rest, i));
+      }
+    });
+
+    persistHands();
+    renderResult();
+    var addBtn = document.getElementById("addPlayerBtn");
+    if (addBtn) addBtn.focus();
+  }
+
+  function rebuildStrengthSigs() {
+    var map = {};
+    state.players.forEach(function (player, index) {
+      if (player.cards.length !== 3) return;
+      var sig = handSignature(player);
+      var name = displayName(player, index);
+      var known = state.history.some(function (item) {
+        return item.type === "hand" && item.sig === sig && item.name === name;
+      });
+      if (known) map[index] = sig;
+    });
+    state.lastStrengthSig = map;
+  }
+
+  function addCard(player, rank) {
     if (player.cards.length >= 3) {
-      flash(index);
+      flash(player);
       return;
     }
     player.cards.push({ rank: rank, suit: player.suit });
-    syncPanel(index);
+    syncPanel(player);
     renderResult();
   }
 
-  function flash(index) {
-    var ui = refs.players[index];
-    if (!ui) return;
+  function flash(player) {
+    var ui = panelFor(player);
+    if (!ui || !ui.count) return;
     ui.count.classList.add("bump");
     window.setTimeout(function () {
       ui.count.classList.remove("bump");
     }, 220);
   }
 
-  function syncPanel(index) {
-    var player = state.players[index];
-    var ui = refs.players[index];
+  function syncPanel(player) {
+    var ui = panelFor(player);
+    if (!ui) return;
     var full = player.cards.length >= 3;
 
     ui.slots.forEach(function (slot, slotIndex) {
@@ -285,8 +372,10 @@
       slot.setAttribute("aria-label", TP.cardLabel(card) + ", tap to remove");
     });
 
-    ui.count.textContent = player.cards.length + "/3";
-    ui.count.className = "count" + (full ? " full" : "");
+    if (ui.count) {
+      ui.count.textContent = player.cards.length + "/3";
+      ui.count.className = "count" + (full ? " full" : "");
+    }
     ui.picker.className = "picker" + (full ? " locked" : "");
     Object.keys(ui.rankNodes).forEach(function (rank) {
       ui.rankNodes[rank].disabled = full;
@@ -301,8 +390,8 @@
       ui.suitNodes[id].setAttribute("aria-pressed", active ? "true" : "false");
     });
 
-    renderStrength(index);
-    logStrength(index);
+    renderStrength(player);
+    logStrength(player);
     persistHands();
   }
 
@@ -320,9 +409,9 @@
     node.style.transform = "scaleX(" + Math.max(0, Math.min(1, value)) + ")";
   }
 
-  function renderStrength(index) {
-    var player = state.players[index];
-    var ui = refs.players[index];
+  function renderStrength(player) {
+    var ui = panelFor(player);
+    if (!ui) return;
 
     if (player.cards.length < 3) {
       ui.strengthRow.style.display = "none";
@@ -349,9 +438,10 @@
       : "";
   }
 
-  function logStrength(index) {
+  function logStrength(player) {
     if (!state.ready) return;
-    var player = state.players[index];
+    var index = state.players.indexOf(player);
+    if (index < 0) return;
     if (player.cards.length !== 3) {
       delete state.lastStrengthSig[index];
       return;
@@ -527,7 +617,7 @@
   function commitResult() {
     var board = ranking();
     if (board.rows.length < 2) {
-      if (board.waiting.length) flash(board.waiting[0].index);
+      if (board.waiting.length) flash(board.waiting[0].player);
       renderResult();
       return;
     }
@@ -602,8 +692,8 @@
     });
     state.lastCommitted = "";
     state.lastStrengthSig = {};
-    refs.players.forEach(function (_, index) {
-      syncPanel(index);
+    state.players.forEach(function (player) {
+      syncPanel(player);
     });
     renderResult();
   }
@@ -657,7 +747,7 @@
           }).slice(0, 3);
         }
         loaded++;
-        syncPanel(index);
+        syncPanel(player);
       });
     }
     if (!loaded) addPlayer(false);
