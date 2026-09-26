@@ -12,6 +12,7 @@
   --blue: #4aa3ff;
   --gold: #f5bb45;
   --red: #ff5a68;
+  --violet: #b98cff;
   --radius: 18px;
   --tap: 48px;
 }
@@ -380,7 +381,109 @@ button { cursor: pointer; touch-action: manipulation; }
 
 .verdict.p1 { color: var(--green); }
 .verdict.p2 { color: var(--blue); }
+.verdict.p3 { color: var(--gold); }
+.verdict.p4 { color: var(--violet); }
 .verdict.tie { color: var(--gold); }
+
+.rank {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rank li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-areas: "no who pct" "no cards hand";
+  align-items: center;
+  gap: 2px 10px;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: #0d151d;
+  border: 1px solid var(--line);
+}
+
+.rank li.first { border-color: var(--green-dim); }
+
+.rank-no {
+  grid-area: no;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0a0e13;
+  background: var(--muted);
+}
+
+.rank li.first .rank-no { background: var(--green); }
+
+.rank-who { grid-area: who; font-size: 14.5px; font-weight: 700; }
+
+.rank-cards {
+  grid-area: cards;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.rank-hand { grid-area: hand; font-size: 11.5px; color: var(--muted); text-align: right; }
+
+.rank-pct {
+  grid-area: pct;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.add-wrap { margin-top: 14px; text-align: center; }
+
+.add-btn {
+  width: 100%;
+  min-height: 54px;
+  border-radius: 15px;
+  border: 1px dashed var(--green-dim);
+  background: rgba(52, 209, 127, 0.06);
+  color: var(--green);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.add-btn:active { background: rgba(52, 209, 127, 0.13); }
+
+.add-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.clear-all { width: 100%; margin-top: 14px; min-height: 40px; }
+
+.history .kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.history .kind.strength { background: rgba(74, 163, 255, 0.16); color: var(--blue); }
+.history .kind.match { background: rgba(52, 209, 127, 0.16); color: var(--green); }
+
+.odds-title {
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
 
 .hands-line {
   display: flex;
@@ -410,6 +513,8 @@ button { cursor: pointer; touch-action: manipulation; }
 .odd-pct { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .odd-row.p1 .odd-pct { color: var(--green); }
 .odd-row.p2 .odd-pct { color: var(--blue); }
+.odd-row.p3 .odd-pct { color: var(--gold); }
+.odd-row.p4 .odd-pct { color: var(--violet); }
 .odd-row.tie .odd-pct { color: var(--gold); }
 
 .bar {
@@ -431,6 +536,8 @@ button { cursor: pointer; touch-action: manipulation; }
 
 .odd-row.p1 .bar span { background: linear-gradient(90deg, #1fa35f, var(--green)); }
 .odd-row.p2 .bar span { background: linear-gradient(90deg, #2a6db5, var(--blue)); }
+.odd-row.p3 .bar span { background: linear-gradient(90deg, #a37a1f, var(--gold)); }
+.odd-row.p4 .bar span { background: linear-gradient(90deg, #6f47b8, var(--violet)); }
 .odd-row.tie .bar span { background: linear-gradient(90deg, #a37a1f, var(--gold)); }
 
 .odds-note { font-size: 12px; color: var(--muted); margin-top: 10px; }

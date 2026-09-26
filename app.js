@@ -3,23 +3,29 @@
 
   var TP = window.TeenPatti;
 
-  var KEY_HANDS = "tp.hands.v2";
-  var KEY_HISTORY = "tp.history.v2";
-  var HISTORY_LIMIT = 20;
+  var KEY_HANDS = "tp.hands.v3";
+  var KEY_HISTORY = "tp.history.v3";
+  var HISTORY_LIMIT = 30;
   var FACE_RANKS = [14, 13, 12, 11];
   var NUM_RANKS = [10, 9, 8, 7, 6, 5, 4, 3, 2];
   var RED_SUITS = { H: true, D: true };
+  var SUIT_CYCLE = ["S", "H", "D", "C"];
+  var COLOR_CYCLE = ["p1", "p2", "p3", "p4"];
 
   var state = {
-    players: [
-      { key: "p1", name: "Player 1", suit: "S", cards: [] },
-      { key: "p2", name: "Player 2", suit: "H", cards: [] }
-    ],
+    players: [],
     history: read(KEY_HISTORY, []) || [],
-    lastCommitted: ""
+    lastCommitted: "",
+    lastStrengthSig: {},
+    ready: false
   };
 
-  var refs = { players: [], result: document.getElementById("result") };
+  var refs = {
+    players: [],
+    result: document.getElementById("result"),
+    mount: document.getElementById("players"),
+    clearBtn: null
+  };
 
   function read(key, fallback) {
     try {
@@ -63,26 +69,33 @@
     return node;
   }
 
+  function displayName(player, index) {
+    return player.name || "Player " + (index + 1);
+  }
+
   function buildPanel(player, index) {
-    var panel = el("section", "panel player");
-    panel.dataset.player = player.key;
+    var color = COLOR_CYCLE[index % COLOR_CYCLE.length];
+    var panel = el("section", "panel player " + color);
+    panel.dataset.player = String(index);
 
     var head = el("div", "player-head");
     var name = el("input", "name-input");
     name.type = "text";
     name.value = player.name;
     name.maxLength = 18;
+    name.placeholder = "Player " + (index + 1);
     name.setAttribute("aria-label", "Name of player " + (index + 1));
     name.addEventListener("input", function () {
       player.name = name.value;
       persistHands();
       renderResult();
+      renderHistory();
     });
 
     var count = el("span", "count", "0/3");
     var reset = el("button", "reset-btn", "Reset");
     reset.type = "button";
-    reset.setAttribute("aria-label", "Clear " + (index + 1 === 1 ? "player 1" : "player 2") + "'s cards");
+    reset.setAttribute("aria-label", "Clear " + displayName(player, index) + "'s cards");
     reset.addEventListener("click", function () {
       player.cards = [];
       syncPanel(index);
@@ -112,7 +125,7 @@
 
     var strength = el("div", "strength");
     var strengthTitle = el("span", "strength-title", "Hand strength");
-    var strengthRow = el("div", "odd-row " + player.key);
+    var strengthRow = el("div", "odd-row " + color);
     var strengthName = el("span", "odd-name", "Beats a random hand");
     var strengthPct = el("span", "odd-pct", "—");
     var strengthBar = el("span", "bar");
@@ -139,7 +152,7 @@
       var btn = el("button", "rank-btn", TP.rankLabel(rank));
       btn.type = "button";
       btn.dataset.rank = rank;
-      btn.setAttribute("aria-label", "Add " + TP.rankLabel(rank) + " of selected suit");
+      btn.setAttribute("aria-label", "Add " + TP.rankLabel(rank) + " of the selected suit");
       btn.addEventListener("click", function () {
         addCard(index, rank);
       });
@@ -176,7 +189,7 @@
       var btn = el("button", "num-btn", String(rank));
       btn.type = "button";
       btn.dataset.rank = rank;
-      btn.setAttribute("aria-label", "Add " + rank + " of selected suit");
+      btn.setAttribute("aria-label", "Add " + rank + " of the selected suit");
       btn.addEventListener("click", function () {
         addCard(index, rank);
       });
@@ -192,15 +205,14 @@
 
     return {
       panel: panel,
+      color: color,
       name: name,
       count: count,
       slots: slotNodes,
       picker: picker,
       rankNodes: rankNodes,
       numNodes: numNodes,
-      suitSelect: null,
       suitNodes: suitNodes,
-      strength: strength,
       strengthRow: strengthRow,
       strengthPct: strengthPct,
       strengthFill: strengthFill,
@@ -208,6 +220,101 @@
       strengthNote: strengthNote,
       strengthWarn: strengthWarn
     };
+  }
+
+  function addPlayer(scroll) {
+    var index = state.players.length;
+    var player = {
+      key: COLOR_CYCLE[index % COLOR_CYCLE.length],
+      name: "Player " + (index + 1),
+      suit: SUIT_CYCLE[index % SUIT_CYCLE.length],
+      cards: []
+    };
+    state.players.push(player);
+
+    var ui = buildPanel(player, index);
+    refs.players.push(ui);
+    refs.mount.insertBefore(ui.panel, refs.clearBtn);
+    syncPanel(index);
+    renderResult();
+
+    if (scroll && ui.panel.scrollIntoView) {
+      ui.panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    return ui;
+  }
+
+  function addCard(index, rank) {
+    var player = state.players[index];
+    if (player.cards.length >= 3) {
+      flash(index);
+      return;
+    }
+    player.cards.push({ rank: rank, suit: player.suit });
+    syncPanel(index);
+    renderResult();
+  }
+
+  function flash(index) {
+    var ui = refs.players[index];
+    if (!ui) return;
+    ui.count.classList.add("bump");
+    window.setTimeout(function () {
+      ui.count.classList.remove("bump");
+    }, 220);
+  }
+
+  function syncPanel(index) {
+    var player = state.players[index];
+    var ui = refs.players[index];
+    var full = player.cards.length >= 3;
+
+    ui.slots.forEach(function (slot, slotIndex) {
+      var card = player.cards[slotIndex];
+      if (!card) {
+        slot.className = "slot empty";
+        slot.innerHTML = '<span class="plus">+</span><span class="slot-hint">empty</span>';
+        slot.setAttribute("aria-label", "Empty card slot " + (slotIndex + 1));
+        return;
+      }
+      var red = RED_SUITS[card.suit] ? " red" : "";
+      slot.className = "slot filled" + red;
+      slot.innerHTML =
+        '<span class="card-rank">' + TP.rankLabel(card.rank) + "</span>" +
+        '<span class="card-suit">' + escapeHtml(TP.suitById(card.suit).symbol) + "</span>" +
+        '<span class="card-tap">tap to remove</span>';
+      slot.setAttribute("aria-label", TP.cardLabel(card) + ", tap to remove");
+    });
+
+    ui.count.textContent = player.cards.length + "/3";
+    ui.count.className = "count" + (full ? " full" : "");
+    ui.picker.className = "picker" + (full ? " locked" : "");
+    Object.keys(ui.rankNodes).forEach(function (rank) {
+      ui.rankNodes[rank].disabled = full;
+    });
+    ui.numNodes.forEach(function (btn) {
+      btn.disabled = full;
+    });
+    Object.keys(ui.suitNodes).forEach(function (id) {
+      var active = player.suit === id;
+      ui.suitNodes[id].disabled = full;
+      ui.suitNodes[id].className = "suit-btn" + (RED_SUITS[id] ? " red" : "") + (active ? " active" : "");
+      ui.suitNodes[id].setAttribute("aria-pressed", active ? "true" : "false");
+    });
+
+    renderStrength(index);
+    logStrength(index);
+    persistHands();
+  }
+
+  function persistHands() {
+    write(KEY_HANDS, state.players.map(function (player) {
+      return { name: player.name, suit: player.suit, cards: player.cards };
+    }));
+  }
+
+  function handSignature(player) {
+    return player.cards.map(function (card) { return card.rank + card.suit; }).sort().join("|");
   }
 
   function renderStrength(index) {
@@ -239,147 +346,159 @@
       : "";
   }
 
-  function addCard(index, rank) {
+  function logStrength(index) {
+    if (!state.ready) return;
     var player = state.players[index];
-    if (player.cards.length >= 3) {
-      flash(player);
+    if (player.cards.length !== 3) {
+      delete state.lastStrengthSig[index];
       return;
     }
-    player.cards.push({ rank: rank, suit: player.suit });
-    syncPanel(index);
-    renderResult();
+
+    var sig = handSignature(player);
+    if (state.lastStrengthSig[index] === sig) return;
+
+    var newest = state.history[0];
+    if (newest && newest.type === "hand" && newest.sig === sig) {
+      state.lastStrengthSig[index] = sig;
+      return;
+    }
+
+    state.lastStrengthSig[index] = sig;
+    state.history.unshift({
+      type: "hand",
+      ts: Date.now(),
+      name: displayName(player, index),
+      sig: sig,
+      cards: TP.cardsLabel(player.cards),
+      hand: TP.explain(player.cards).name,
+      pWin: TP.handStrength(player.cards).pWin
+    });
+    trimHistory();
   }
 
-  function flash(player) {
-    var ui = refs.players[state.players.indexOf(player)];
-    if (!ui) return;
-    ui.count.classList.add("bump");
-    window.setTimeout(function () {
-      ui.count.classList.remove("bump");
-    }, 220);
+  function trimHistory() {
+    state.history = state.history.slice(0, HISTORY_LIMIT);
+    write(KEY_HISTORY, state.history);
+    renderHistory();
   }
 
-  function syncPanel(index) {
-    var player = state.players[index];
-    var ui = refs.players[index];
-    var full = player.cards.length >= 3;
+  function ranking() {
+    var ready = [];
+    var waiting = [];
+    state.players.forEach(function (player, index) {
+      if (player.cards.length === 3) ready.push({ player: player, index: index });
+      else waiting.push({ player: player, index: index });
+    });
 
-    ui.slots.forEach(function (slot, slotIndex) {
-      var card = player.cards[slotIndex];
-      slot.className = "slot" + (card ? " filled" : " empty");
-      if (!card) {
-        slot.innerHTML = '<span class="plus">+</span><span class="slot-hint">empty</span>';
-        slot.setAttribute("aria-label", "Empty card slot " + (slotIndex + 1));
-        return;
+    ready.sort(function (a, b) {
+      return TP.compareStrength(TP.evaluate(b.player.cards).strength, TP.evaluate(a.player.cards).strength);
+    });
+
+    var rows = [];
+    var previous = null;
+    var place = 0;
+    ready.forEach(function (item, position) {
+      var sig = TP.evaluate(item.player.cards).signature;
+      if (sig !== previous) {
+        place = position + 1;
+        previous = sig;
       }
-      var red = RED_SUITS[card.suit] ? " red" : "";
-      slot.innerHTML =
-        '<span class="card-rank">' + TP.rankLabel(card.rank) + "</span>" +
-        '<span class="card-suit">' + escapeHtml(TP.suitById(card.suit).symbol) + "</span>" +
-        '<span class="card-tap">tap to remove</span>';
-      slot.className = "slot filled" + red;
-      slot.setAttribute("aria-label", TP.cardLabel(card) + ", tap to remove");
+      rows.push({
+        player: item.player,
+        index: item.index,
+        place: place,
+        why: TP.explain(item.player.cards),
+        strength: TP.handStrength(item.player.cards)
+      });
     });
 
-    ui.count.textContent = player.cards.length + "/3";
-    ui.count.className = "count" + (full ? " full" : "");
-    ui.picker.className = "picker" + (full ? " locked" : "");
-    Object.keys(ui.rankNodes).forEach(function (rank) {
-      ui.rankNodes[rank].disabled = full;
-    });
-    ui.numNodes.forEach(function (btn) {
-      btn.disabled = full;
-    });
-    Object.keys(ui.suitNodes).forEach(function (id) {
-      var active = player.suit === id;
-      ui.suitNodes[id].disabled = full;
-      ui.suitNodes[id].className = "suit-btn" + (RED_SUITS[id] ? " red" : "") + (active ? " active" : "");
-      ui.suitNodes[id].setAttribute("aria-pressed", active ? "true" : "false");
-    });
-
-    renderStrength(index);
-    persistHands();
-  }
-
-  function persistHands() {
-    write(KEY_HANDS, state.players.map(function (p) {
-      return { name: p.name, suit: p.suit, cards: p.cards };
-    }));
-  }
-
-  function handSignature(player) {
-    return player.cards.map(function (c) { return c.rank + c.suit; }).sort().join("|");
+    return { rows: rows, waiting: waiting };
   }
 
   function renderResult() {
-    var a = state.players[0];
-    var b = state.players[1];
-    var ready = a.cards.length === 3 && b.cards.length === 3;
+    var board = ranking();
+    var rows = board.rows;
     var compareBtn = document.getElementById("compareBtn");
-    compareBtn.className = "primary-btn" + (ready ? "" : " needs");
+    compareBtn.className = "primary-btn" + (rows.length >= 2 ? "" : " needs");
 
-    if (!ready) {
-      var needA = Math.max(0, 3 - a.cards.length);
-      var needB = Math.max(0, 3 - b.cards.length);
+    if (rows.length === 0) {
+      var needs = board.waiting.map(function (item) {
+        var left = 3 - item.player.cards.length;
+        return "<strong>" + escapeHtml(displayName(item.player, item.index)) + "</strong> needs <strong>" +
+          left + "</strong> more card" + (left === 1 ? "" : "s");
+      }).join(", ");
       refs.result.innerHTML =
         '<h2 class="section-title">Result</h2>' +
-        '<p class="empty-state">Still picking. <strong>' +
-        (a.name || "Player 1") + "</strong> needs <strong>" + needA +
-        "</strong> more card" + (needA === 1 ? "" : "s") + ", <strong>" +
-        (b.name || "Player 2") + "</strong> needs <strong>" + needB +
-        "</strong> more.</p>";
+        '<p class="empty-state">Still picking. ' + (needs || "Add a player to get started.") + ".</p>";
       return;
     }
 
-    var cmp = TP.compareHands(a.cards, b.cards);
-    var prob = TP.probabilityFor(a.cards, b.cards);
-    var evalA = cmp.a;
-    var evalB = cmp.b;
-    var whyA = TP.explain(a.cards);
-    var whyB = TP.explain(b.cards);
-    var nameA = escapeHtml(a.name || "Player 1");
-    var nameB = escapeHtml(b.name || "Player 2");
+    if (rows.length === 1) {
+      var only = rows[0];
+      refs.result.innerHTML =
+        '<h2 class="section-title">Result</h2>' +
+        '<p class="empty-state"><strong>' + escapeHtml(displayName(only.player, only.index)) +
+        "</strong> is ready with <strong>" + TP.cardsLabel(only.player.cards) + "</strong> (" +
+        escapeHtml(only.why.name) + "). Add another player to compare.</p>";
+      return;
+    }
 
-    var verdictClass = cmp.isTie ? "tie" : cmp.winner === "A" ? "p1" : "p2";
-    var winnerName = cmp.isTie ? "It's a tie" : cmp.winner === "A" ? nameA + " wins" : nameB + " wins";
-    var tag = cmp.isTie ? "split pot" : "winner";
+    var top = rows[0];
+    var second = rows[1];
+    var tiedAtTop = rows.filter(function (row) { return row.place === 1; }).length > 1;
+    var nameA = escapeHtml(displayName(top.player, top.index));
+    var nameB = escapeHtml(displayName(second.player, second.index));
+    var cmp = TP.compareHands(top.player.cards, second.player.cards);
+    var prob = TP.probabilityFor(top.player.cards, second.player.cards);
 
+    var winnerName = tiedAtTop ? "It's a tie" : nameA + " wins";
+    var tag = tiedAtTop ? "split pot" : "winner";
     var reason;
-    if (cmp.isTie) {
-      reason = "Both hands are a <b>" + escapeHtml(evalA.name.toLowerCase()) +
-        "</b> on the same rank" + (evalA.category === TP.CATEGORY.PAIR || evalA.category === TP.CATEGORY.HIGH_CARD ? "s" : "") +
+    if (tiedAtTop) {
+      reason = "Both top hands are a <b>" + escapeHtml(top.why.name.toLowerCase()) +
+        "</b> on the same rank" + (top.why.category === TP.CATEGORY.PAIR || top.why.category === TP.CATEGORY.HIGH_CARD ? "s" : "") +
         ", and suits do not break a tie in Teen Patti.";
     } else {
-      var winEval = cmp.winner === "A" ? evalA : evalB;
-      var loseEval = cmp.winner === "A" ? evalB : evalA;
-      reason = "<b>" + escapeHtml(winEval.phrase) + "</b> beats <b>" + escapeHtml(loseEval.phrase) + "</b>.";
+      reason = "<b>" + escapeHtml(top.why.text) + "</b>";
     }
 
     var html =
-      '<div class="verdict ' + verdictClass + '">' + winnerName + '<span class="tag">' + tag + "</span></div>" +
-      '<div class="hands-line">' +
-      '<span class="chip">' + nameA + " <b>" + TP.cardsLabel(a.cards) + "</b> · " + escapeHtml(whyA.name) + "</span>" +
-      '<span class="chip">' + nameB + " <b>" + TP.cardsLabel(b.cards) + "</b> · " + escapeHtml(whyB.name) + "</span>" +
-      "</div>" +
+      '<h2 class="section-title">Result</h2>' +
+      '<div class="verdict ' + (tiedAtTop ? "tie" : top.color) + '">' + winnerName +
+      '<span class="tag">' + tag + "</span></div>" +
       '<p class="reason">' + reason + "</p>" +
-      '<p class="reason-detail">' + escapeHtml((cmp.isTie ? whyA : cmp.winner === "A" ? whyA : whyB).name) +
-      " — " + escapeHtml((cmp.isTie ? whyA : cmp.winner === "A" ? whyA : whyB).text) + "</p>" +
-      '<div class="odds">' +
-      oddRow("p1", nameA + " win chance", pct(prob.valid ? prob.pA : 0)) +
-      oddRow("p2", nameB + " win chance", pct(prob.valid ? prob.pB : 0)) +
+      '<ol class="rank">' +
+      rows.map(function (row) {
+        var cls = row.place === 1 ? " first" : "";
+        return '<li class="' + cls.slice(1) + '">' +
+          '<span class="rank-no">' + row.place + "</span>" +
+          '<span class="rank-who">' + escapeHtml(displayName(row.player, row.index)) + "</span>" +
+          '<span class="rank-cards">' + TP.cardsLabel(row.player.cards) + "</span>" +
+          '<span class="rank-hand">' + escapeHtml(row.why.name) + "</span>" +
+          '<span class="rank-pct">' + pct(row.strength.pWin) + "</span>" +
+          "</li>";
+      }).join("") +
+      "</ol>";
+
+    if (board.waiting.length) {
+      html += '<p class="odds-note">Waiting on ' + board.waiting.map(function (item) {
+        return escapeHtml(displayName(item.player, item.index)) + " (" +
+          (3 - item.player.cards.length) + " more)";
+      }).join(", ") + ".</p>";
+    }
+
+    html += '<div class="odds">' +
+      '<p class="odds-title">' + nameA + " vs " + nameB + " &mdash; head to head</p>" +
+      oddRow(top.color, nameA + " win chance", pct(prob.valid ? prob.pA : 0)) +
+      oddRow(second.color, nameB + " win chance", pct(prob.valid ? prob.pB : 0)) +
       oddRow("tie", "Tie chance", pct(prob.valid ? prob.pTie : 0)) +
       "</div>";
 
     html += prob.valid
-      ? '<p class="odds-note">Head to head: exact result over all <b>' + prob.total.toLocaleString("en-US") +
-        "</b> hands the other player could be dealt from the remaining 46 cards.</p>"
-      : '<p class="odds-note">Head-to-head odds need 6 different cards on the table — ' + escapeHtml(prob.reason) + "</p>";
-
-    var strengthA = TP.handStrength(a.cards);
-    var strengthB = TP.handStrength(b.cards);
-    html += '<p class="odds-note">Hand strength on its own: <b>' + nameA + " " + pct(strengthA.pWin) +
-      "</b> and <b>" + nameB + " " + pct(strengthB.pWin) + "</b> of all " +
-      strengthA.total.toLocaleString("en-US") + " hands the opponent could hold.</p>";
+      ? '<p class="odds-note">Exact over all <b>' + prob.total.toLocaleString("en-US") +
+        "</b> hands " + nameB + " could be dealt from the remaining 46 cards.</p>"
+      : '<p class="odds-note">Head-to-head odds need 6 different cards on the table — ' +
+        escapeHtml(prob.reason) + "</p>";
 
     refs.result.innerHTML = html;
 
@@ -400,62 +519,70 @@
       "</div>";
   }
 
-  function commitResult(play) {
-    var a = state.players[0];
-    var b = state.players[1];
-    if (a.cards.length !== 3 || b.cards.length !== 3) {
-      flash(a);
+  function commitResult() {
+    var board = ranking();
+    if (board.rows.length < 2) {
+      if (board.waiting.length) flash(board.waiting[0].index);
       renderResult();
       return;
     }
 
-    var signature = handSignature(a) + "::" + handSignature(b);
-    var cmp = TP.compareHands(a.cards, b.cards);
-
-    if (play) {
-      refs.result.classList.remove("flash");
-      void refs.result.offsetWidth;
-      refs.result.classList.add("flash");
-      if (refs.result.scrollIntoView) {
-        refs.result.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-
+    var top = board.rows[0];
+    var second = board.rows[1];
+    var signature = state.players.map(handSignature).join("::");
     if (signature === state.lastCommitted) return;
     state.lastCommitted = signature;
 
-    var prob = TP.probabilityFor(a.cards, b.cards);
+    var cmp = TP.compareHands(top.player.cards, second.player.cards);
+    var tiedAtTop = board.rows.filter(function (row) { return row.place === 1; }).length > 1;
+    var prob = TP.probabilityFor(top.player.cards, second.player.cards);
+
     state.history.unshift({
+      type: "match",
       ts: Date.now(),
-      a: a.name || "Player 1",
-      b: b.name || "Player 2",
-      cardsA: TP.cardsLabel(a.cards),
-      cardsB: TP.cardsLabel(b.cards),
-      handA: cmp.a.name,
-      handB: cmp.b.name,
-      winner: cmp.isTie ? "tie" : cmp.winner,
+      a: displayName(top.player, top.index),
+      b: displayName(second.player, second.index),
+      cardsA: TP.cardsLabel(top.player.cards),
+      cardsB: TP.cardsLabel(second.player.cards),
+      handA: top.why.name,
+      handB: second.why.name,
+      winner: tiedAtTop ? "tie" : "A",
       pA: prob.valid ? prob.pA : null,
       pB: prob.valid ? prob.pB : null
     });
-    state.history = state.history.slice(0, HISTORY_LIMIT);
-    write(KEY_HISTORY, state.history);
-    renderHistory();
+    trimHistory();
+
+    refs.result.classList.remove("flash");
+    void refs.result.offsetWidth;
+    refs.result.classList.add("flash");
+    if (refs.result.scrollIntoView) {
+      refs.result.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    void cmp;
   }
 
   function renderHistory() {
     var list = document.getElementById("history");
     if (!state.history.length) {
-      list.innerHTML = '<li class="none">No hands compared yet.</li>';
+      list.innerHTML = '<li class="none">Nothing yet. Pick 3 cards to start a record.</li>';
       return;
     }
+
     list.innerHTML = state.history.map(function (item) {
+      if (item.type === "hand") {
+        return "<li>" +
+          '<span class="who"><span class="kind strength">strength</span> ' +
+          escapeHtml(item.name) + ' <span class="meta">' + escapeHtml(item.cards) + "</span></span>" +
+          '<span class="meta">' + escapeHtml(item.hand) + " · " + pct(item.pWin) + "</span>" +
+          "</li>";
+      }
       var outcome = item.winner === "tie"
         ? "Tie"
         : escapeHtml(item.winner === "A" ? item.a : item.b) + " won";
       var odds = item.pA === null ? "" : " · " + pct(item.pA) + " / " + pct(item.pB);
       return "<li>" +
-        '<span class="who">' + outcome + '<span class="meta"> · ' +
-        escapeHtml(item.winner === "A" ? item.cardsA : item.cardsB) + "</span></span>" +
+        '<span class="who"><span class="kind match">match</span> ' + outcome +
+        '<span class="meta"> · ' + escapeHtml(item.winner === "A" ? item.cardsA : item.cardsB) + "</span></span>" +
         '<span class="meta">' + escapeHtml(item.handA) + odds + "</span>" +
         "</li>";
     }).join("");
@@ -466,88 +593,96 @@
       player.cards = [];
     });
     state.lastCommitted = "";
+    state.lastStrengthSig = {};
     refs.players.forEach(function (_, index) {
       syncPanel(index);
     });
     renderResult();
   }
 
-  function init() {
-    var mount = document.getElementById("players");
-    state.players.forEach(function (player, index) {
-      var ui = buildPanel(player, index);
-      refs.players.push(ui);
-      mount.appendChild(ui.panel);
-    });
-
-    var saved = read(KEY_HANDS, null);
-    if (Array.isArray(saved) && saved.length === 2) {
-      state.players.forEach(function (player, index) {
-        var data = saved[index] || {};
-        if (typeof data.name === "string" && data.name) {
-          player.name = data.name;
-          refs.players[index].name.value = data.name;
-        }
-        if (typeof data.suit === "string") {
-          player.suit = data.suit;
-        }
-        if (Array.isArray(data.cards)) {
-          player.cards = data.cards.filter(function (card) {
-            return card && card.rank >= 2 && card.rank <= 14 &&
-              TP.SUITS.some(function (suit) { return suit.id === card.suit; });
-          }).slice(0, 3);
-        }
-        syncPanel(index);
-      });
-    } else {
-      state.players.forEach(function (_, index) {
-        syncPanel(index);
-      });
+  function scrollTo(target) {
+    if (!window.scrollTo) return;
+    try {
+      window.scrollTo(target);
+    } catch (e) {
+      return;
     }
+  }
 
-    var rulesList = document.getElementById("rulesList");
-    rulesList.innerHTML = TP.RULES_LADDER.map(function (rule) {
-      return "<li>" + escapeHtml(rule) + "</li>";
-    }).join("");
-
-    document.getElementById("compareBtn").addEventListener("click", function () {
-      commitResult(true);
-    });
-
-    document.getElementById("clearHistory").addEventListener("click", function () {
-      state.history = [];
-      state.lastCommitted = "";
-      write(KEY_HISTORY, state.history);
-      renderHistory();
-    });
-
-    var clearBtn = el("button", "ghost-btn", "Clear both");
-    clearBtn.type = "button";
-    clearBtn.style.width = "100%";
-    clearBtn.style.marginTop = "14px";
-    clearBtn.addEventListener("click", clearAll);
-    document.getElementById("players").after(clearBtn);
-
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" && event.target === document.body) commitResult(true);
-    });
-
-    renderHistory();
-    renderResult();
-    scrollPastHeader();
+  function prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }
 
   function scrollPastHeader() {
     var header = document.querySelector(".topbar");
     if (!header) return;
     var offset = Math.round(header.getBoundingClientRect().height) + 4;
-    var go = function () {
-      window.scrollTo(0, offset);
-    };
-    window.requestAnimationFrame(function () {
-      go();
-      window.setTimeout(go, 60);
+    window.setTimeout(function () {
+      if (prefersReducedMotion()) {
+        scrollTo(0, offset);
+      } else {
+        scrollTo({ top: offset, behavior: "smooth" });
+      }
+    }, 260);
+  }
+
+  function init() {
+    refs.clearBtn = el("button", "ghost-btn clear-all", "Clear all hands");
+    refs.clearBtn.type = "button";
+    refs.clearBtn.addEventListener("click", clearAll);
+    refs.mount.appendChild(refs.clearBtn);
+
+    var saved = read(KEY_HANDS, null);
+    var loaded = 0;
+    if (Array.isArray(saved)) {
+      saved.forEach(function (data) {
+        if (loaded >= 8) return;
+        var index = loaded;
+        var ui = addPlayer(false);
+        var player = state.players[index];
+        if (data && typeof data.name === "string" && data.name) {
+          player.name = data.name;
+          ui.name.value = data.name;
+        }
+        if (data && typeof data.suit === "string" && TP.suitById(data.suit)) {
+          player.suit = data.suit;
+        }
+        if (data && Array.isArray(data.cards)) {
+          player.cards = data.cards.filter(function (card) {
+            return card && card.rank >= 2 && card.rank <= 14 &&
+              TP.SUITS.some(function (suit) { return suit.id === card.suit; });
+          }).slice(0, 3);
+        }
+        loaded++;
+        syncPanel(index);
+      });
+    }
+    if (!loaded) addPlayer(false);
+
+    var rulesList = document.getElementById("rulesList");
+    rulesList.innerHTML = TP.RULES_LADDER.map(function (rule) {
+      return "<li>" + escapeHtml(rule) + "</li>";
+    }).join("");
+
+    var addBtn = document.getElementById("addPlayerBtn");
+    addBtn.addEventListener("click", function () {
+      addPlayer(true);
     });
+
+    document.getElementById("compareBtn").addEventListener("click", commitResult);
+
+    document.getElementById("clearHistory").addEventListener("click", function () {
+      state.history = [];
+      state.lastCommitted = "";
+      state.lastStrengthSig = {};
+      write(KEY_HISTORY, state.history);
+      renderHistory();
+    });
+
+    state.ready = true;
+    renderHistory();
+    renderResult();
+    scrollPastHeader();
   }
 
   init();
