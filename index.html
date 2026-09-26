@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e13">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Teen Patti card judge: pick 3 cards each for two players and see who won, with exact win probabilities. Works great on phones.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Teen Patti Judge — who won?</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f1720'/%3E%3Ctext x='50' y='74' font-size='66' text-anchor='middle' fill='%2334d17f'%3E%E2%99%A0%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">♠</span>
+      <span class="brand-text">
+        <strong>Teen Patti Judge</strong>
+        <small>Who won? Exact odds inside.</small>
+      </span>
+    </div>
+    <button id="soundBtn" class="icon-btn" type="button" aria-label="Toggle sound" aria-pressed="true">🔊</button>
+  </header>
+
+  <main id="players" class="players"></main>
+
+  <section id="result" class="panel result" aria-live="polite"></section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>History</h2>
+      <button id="clearHistory" class="ghost-btn" type="button">Clear</button>
+    </div>
+    <ul id="history" class="history"></ul>
+  </section>
+
+  <details class="panel rules">
+    <summary>Rules used</summary>
+    <ol id="rulesList" class="rules-list"></ol>
+    <p class="note">Strongest to weakest. Suits never decide the main pot in Teen Patti — they only split the side pot (Rani).</p>
+  </details>
+
+  <div class="actionbar">
+    <button id="compareBtn" class="primary-btn" type="button">Who won?</button>
+  </div>
+</div>
+<script src="hand.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
