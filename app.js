@@ -5,7 +5,6 @@
 
   var KEY_HANDS = "tp.hands.v2";
   var KEY_HISTORY = "tp.history.v2";
-  var KEY_SOUND = "tp.sound.v2";
   var HISTORY_LIMIT = 20;
   var FACE_RANKS = [14, 13, 12, 11];
   var NUM_RANKS = [10, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -16,7 +15,6 @@
       { key: "p1", name: "Player 1", suit: "S", cards: [] },
       { key: "p2", name: "Player 2", suit: "H", cards: [] }
     ],
-    sound: read(KEY_SOUND, true) === true,
     history: read(KEY_HISTORY, []) || [],
     lastCommitted: ""
   };
@@ -82,8 +80,9 @@
     });
 
     var count = el("span", "count", "0/3");
-    var reset = el("button", "ghost-btn", "Reset");
+    var reset = el("button", "reset-btn", "Reset");
     reset.type = "button";
+    reset.setAttribute("aria-label", "Clear " + (index + 1 === 1 ? "player 1" : "player 2") + "'s cards");
     reset.addEventListener("click", function () {
       player.cards = [];
       syncPanel(index);
@@ -122,10 +121,14 @@
     strengthRow.appendChild(strengthName);
     strengthRow.appendChild(strengthPct);
     strengthRow.appendChild(strengthBar);
+    var strengthReason = el("p", "strength-reason", "");
     var strengthNote = el("p", "strength-note", "Pick 3 cards to see this hand's winning chance.");
+    var strengthWarn = el("p", "strength-warn", "");
     strength.appendChild(strengthTitle);
     strength.appendChild(strengthRow);
+    strength.appendChild(strengthReason);
     strength.appendChild(strengthNote);
+    strength.appendChild(strengthWarn);
 
     var picker = el("div", "picker");
     picker.appendChild(el("span", "picker-label", "Face cards"));
@@ -147,20 +150,23 @@
 
     var suitRow = el("div", "suit-row");
     suitRow.appendChild(el("span", "picker-label", "Suit"));
-    var suitSelect = el("select", "suit-select");
+    var suitGroup = el("div", "suits");
+    suitGroup.setAttribute("role", "group");
+    suitGroup.setAttribute("aria-label", "Suit for player " + (index + 1));
+    var suitNodes = {};
     TP.SUITS.forEach(function (suit) {
-      var opt = el("option", null, escapeHtml(suit.symbol + " " + suit.name));
-      opt.value = suit.id;
-      suitSelect.appendChild(opt);
+      var btn = el("button", "suit-btn" + (RED_SUITS[suit.id] ? " red" : ""), escapeHtml(suit.symbol));
+      btn.type = "button";
+      btn.dataset.suit = suit.id;
+      btn.setAttribute("aria-label", suit.name);
+      btn.addEventListener("click", function () {
+        player.suit = suit.id;
+        syncPanel(index);
+      });
+      suitGroup.appendChild(btn);
+      suitNodes[suit.id] = btn;
     });
-    suitSelect.value = player.suit;
-    suitSelect.setAttribute("aria-label", "Suit for player " + (index + 1));
-    suitSelect.addEventListener("change", function () {
-      player.suit = suitSelect.value;
-      persistHands();
-      syncPanel(index);
-    });
-    suitRow.appendChild(suitSelect);
+    suitRow.appendChild(suitGroup);
     picker.appendChild(suitRow);
 
     picker.appendChild(el("span", "picker-label", "Numbers"));
@@ -192,12 +198,15 @@
       picker: picker,
       rankNodes: rankNodes,
       numNodes: numNodes,
-      suitSelect: suitSelect,
+      suitSelect: null,
+      suitNodes: suitNodes,
       strength: strength,
       strengthRow: strengthRow,
       strengthPct: strengthPct,
       strengthFill: strengthFill,
-      strengthNote: strengthNote
+      strengthReason: strengthReason,
+      strengthNote: strengthNote,
+      strengthWarn: strengthWarn
     };
   }
 
@@ -209,38 +218,45 @@
       ui.strengthRow.style.display = "none";
       ui.strengthPct.textContent = "—";
       ui.strengthFill.style.width = "0%";
+      ui.strengthReason.textContent = "";
+      ui.strengthWarn.textContent = "";
       ui.strengthNote.textContent = "Pick " + (3 - player.cards.length) +
         " more card" + (player.cards.length === 2 ? "" : "s") + " to see this hand's winning chance.";
       return;
     }
 
     var strength = TP.handStrength(player.cards);
+    var why = TP.explain(player.cards);
     ui.strengthRow.style.display = "";
     ui.strengthPct.textContent = pct(strength.pWin);
     ui.strengthFill.style.width = (strength.pWin * 100).toFixed(2) + "%";
+    ui.strengthReason.textContent = why.name + " · " + why.detail + " — " + why.text;
     ui.strengthNote.textContent = "of the " + strength.total.toLocaleString("en-US") +
       " hands an opponent could be dealt, plus a " + pct(strength.pTie) + " tie chance.";
+    ui.strengthWarn.textContent = why.duplicates.length
+      ? "You picked " + why.duplicates.join(" and ") +
+        " more than once, so this counts from a smaller deck."
+      : "";
   }
 
   function addCard(index, rank) {
     var player = state.players[index];
     if (player.cards.length >= 3) {
-      pulse(player);
+      flash(player);
       return;
     }
     player.cards.push({ rank: rank, suit: player.suit });
     syncPanel(index);
     renderResult();
-    if (player.cards.length === 3) {
-      var next = state.players[index === 0 ? 1 : 0];
-      if (next.cards.length === 0 && refs.players[index === 0 ? 1 : 0].panel.scrollIntoView) {
-        refs.players[index === 0 ? 1 : 0].panel.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }
   }
 
-  function pulse(player) {
-    if (navigator.vibrate) navigator.vibrate(18);
+  function flash(player) {
+    var ui = refs.players[state.players.indexOf(player)];
+    if (!ui) return;
+    ui.count.classList.add("bump");
+    window.setTimeout(function () {
+      ui.count.classList.remove("bump");
+    }, 220);
   }
 
   function syncPanel(index) {
@@ -274,7 +290,12 @@
     ui.numNodes.forEach(function (btn) {
       btn.disabled = full;
     });
-    ui.suitSelect.disabled = full;
+    Object.keys(ui.suitNodes).forEach(function (id) {
+      var active = player.suit === id;
+      ui.suitNodes[id].disabled = full;
+      ui.suitNodes[id].className = "suit-btn" + (RED_SUITS[id] ? " red" : "") + (active ? " active" : "");
+      ui.suitNodes[id].setAttribute("aria-pressed", active ? "true" : "false");
+    });
 
     renderStrength(index);
     persistHands();
@@ -314,6 +335,8 @@
     var prob = TP.probabilityFor(a.cards, b.cards);
     var evalA = cmp.a;
     var evalB = cmp.b;
+    var whyA = TP.explain(a.cards);
+    var whyB = TP.explain(b.cards);
     var nameA = escapeHtml(a.name || "Player 1");
     var nameB = escapeHtml(b.name || "Player 2");
 
@@ -335,10 +358,12 @@
     var html =
       '<div class="verdict ' + verdictClass + '">' + winnerName + '<span class="tag">' + tag + "</span></div>" +
       '<div class="hands-line">' +
-      '<span class="chip">' + nameA + " <b>" + TP.cardsLabel(a.cards) + "</b></span>" +
-      '<span class="chip">' + nameB + " <b>" + TP.cardsLabel(b.cards) + "</b></span>" +
+      '<span class="chip">' + nameA + " <b>" + TP.cardsLabel(a.cards) + "</b> · " + escapeHtml(whyA.name) + "</span>" +
+      '<span class="chip">' + nameB + " <b>" + TP.cardsLabel(b.cards) + "</b> · " + escapeHtml(whyB.name) + "</span>" +
       "</div>" +
       '<p class="reason">' + reason + "</p>" +
+      '<p class="reason-detail">' + escapeHtml((cmp.isTie ? whyA : cmp.winner === "A" ? whyA : whyB).name) +
+      " — " + escapeHtml((cmp.isTie ? whyA : cmp.winner === "A" ? whyA : whyB).text) + "</p>" +
       '<div class="odds">' +
       oddRow("p1", nameA + " win chance", pct(prob.valid ? prob.pA : 0)) +
       oddRow("p2", nameB + " win chance", pct(prob.valid ? prob.pB : 0)) +
@@ -375,51 +400,11 @@
       "</div>";
   }
 
-  function playTone(ctx, freq, start, duration, peak, type) {
-    var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
-    osc.type = type || "triangle";
-    osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime + start);
-    gain.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(ctx.currentTime + start);
-    osc.stop(ctx.currentTime + start + duration + 0.05);
-  }
-
-  function audioContext() {
-    var Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return null;
-    if (!playTone.ctx) playTone.ctx = new Ctor();
-    if (playTone.ctx.state === "suspended") playTone.ctx.resume();
-    return playTone.ctx;
-  }
-
-  function playSound(kind) {
-    if (!state.sound) return;
-    var ctx = audioContext();
-    if (!ctx) return;
-    if (kind === "win") {
-      playTone(ctx, 523.25, 0, 0.16, 0.16);
-      playTone(ctx, 659.25, 0.11, 0.16, 0.16);
-      playTone(ctx, 783.99, 0.22, 0.3, 0.18);
-    } else if (kind === "lose") {
-      playTone(ctx, 392, 0, 0.2, 0.14, "sine");
-      playTone(ctx, 293.66, 0.14, 0.34, 0.14, "sine");
-    } else {
-      playTone(ctx, 440, 0, 0.2, 0.13, "sine");
-      playTone(ctx, 440, 0.16, 0.26, 0.13, "sine");
-    }
-  }
-
   function commitResult(play) {
     var a = state.players[0];
     var b = state.players[1];
     if (a.cards.length !== 3 || b.cards.length !== 3) {
-      pulse(a);
-      if (navigator.vibrate) navigator.vibrate(18);
+      flash(a);
       renderResult();
       return;
     }
@@ -428,8 +413,6 @@
     var cmp = TP.compareHands(a.cards, b.cards);
 
     if (play) {
-      playSound(cmp.isTie ? "tie" : cmp.winner === "A" ? "win" : "lose");
-      if (navigator.vibrate) navigator.vibrate(cmp.isTie ? [12, 40, 12] : [18]);
       refs.result.classList.remove("flash");
       void refs.result.offsetWidth;
       refs.result.classList.add("flash");
@@ -507,7 +490,6 @@
         }
         if (typeof data.suit === "string") {
           player.suit = data.suit;
-          refs.players[index].suitSelect.value = data.suit;
         }
         if (Array.isArray(data.cards)) {
           player.cards = data.cards.filter(function (card) {
@@ -527,19 +509,6 @@
     rulesList.innerHTML = TP.RULES_LADDER.map(function (rule) {
       return "<li>" + escapeHtml(rule) + "</li>";
     }).join("");
-
-    var soundBtn = document.getElementById("soundBtn");
-    var syncSound = function () {
-      soundBtn.textContent = state.sound ? "🔊" : "🔇";
-      soundBtn.setAttribute("aria-pressed", state.sound ? "true" : "false");
-    };
-    soundBtn.addEventListener("click", function () {
-      state.sound = !state.sound;
-      write(KEY_SOUND, state.sound);
-      syncSound();
-      if (state.sound) playSound("win");
-    });
-    syncSound();
 
     document.getElementById("compareBtn").addEventListener("click", function () {
       commitResult(true);
@@ -565,6 +534,20 @@
 
     renderHistory();
     renderResult();
+    scrollPastHeader();
+  }
+
+  function scrollPastHeader() {
+    var header = document.querySelector(".topbar");
+    if (!header) return;
+    var offset = Math.round(header.getBoundingClientRect().height) + 4;
+    var go = function () {
+      window.scrollTo(0, offset);
+    };
+    window.requestAnimationFrame(function () {
+      go();
+      window.setTimeout(go, 60);
+    });
   }
 
   init();

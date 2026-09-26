@@ -97,6 +97,7 @@
     var key3 = 0;
     var name = "";
     var detail = "";
+    var phrase = "";
 
     if (high === low) {
       if (high === 10) {
@@ -104,22 +105,26 @@
         key1 = 10;
         name = "Three tens (Teen)";
         detail = "10 10 10";
+        phrase = "three tens";
       } else {
         category = CATEGORY.TRIO;
         key1 = high;
         name = "Three of a kind";
-        detail = "trio of " + rankName(high);
+        detail = rankName(high);
+        phrase = "trio of " + rankName(high);
       }
     } else if (mid === low + 1 && high === mid + 1) {
       category = CATEGORY.STRAIGHT;
       key1 = high;
       name = "Straight run";
       detail = cardsLabel(cards.slice().sort(function (a, b) { return b.rank - a.rank; }));
+      phrase = "straight run of " + detail;
     } else if (high === 14 && mid === 3 && low === 2) {
       category = CATEGORY.STRAIGHT;
       key1 = 3;
       name = "Straight run";
       detail = "A 2 3";
+      phrase = "straight run of A 2 3";
     } else if (high === mid || mid === low) {
       category = CATEGORY.PAIR;
       if (high === mid) {
@@ -130,7 +135,8 @@
         key2 = high;
       }
       name = "Pair";
-      detail = "pair of " + rankName(key1) + " with " + rankLabel(key2) + " kicker";
+      detail = rankName(key1) + " with " + rankLabel(key2) + " kicker";
+      phrase = "pair of " + detail;
     } else {
       category = CATEGORY.HIGH_CARD;
       key1 = high;
@@ -138,6 +144,7 @@
       key3 = low;
       name = "High card";
       detail = rankLabel(high) + " " + rankLabel(mid) + " " + rankLabel(low) + " kickers";
+      phrase = "high card " + rankLabel(high) + " " + rankLabel(mid);
     }
 
     var strength = [category, key1, key2, key3];
@@ -151,11 +158,7 @@
       detail: detail,
       strength: strength,
       signature: strength.join(","),
-      phrase: name === "Straight run" ? "straight run of " + detail
-        : name === "Three of a kind" ? detail
-        : name === "Three tens (Teen)" ? "three tens"
-        : name === "Pair" ? detail
-        : "high card " + rankLabel(high)
+      phrase: phrase
     };
   }
 
@@ -177,6 +180,42 @@
       isTie: cmp === 0,
       a: a,
       b: b
+    };
+  }
+
+  var CATEGORY_EXPLANATIONS = {
+    1: "Ranks lowest, so it wins only when the other hand's cards are all lower.",
+    2: "Beats every high card, loses to a sequence or a trio.",
+    3: "Sits below a sequence but above every pair.",
+    4: "Second strongest, only a trio of a kind beats it.",
+    5: "Strongest hand in the game, nothing can beat it."
+  };
+
+  function duplicateLabels(cards) {
+    var counts = {};
+    var labels = [];
+    cards.forEach(function (card) {
+      var key = cardKey(card);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    Object.keys(counts).forEach(function (key) {
+      if (counts[key] > 1) {
+        var parts = key.split("-");
+        labels.push(rankLabel(Number(parts[0])) + suitById(parts[1]).symbol);
+      }
+    });
+    return labels;
+  }
+
+  function explain(cards) {
+    var ev = evaluate(cards);
+    return {
+      name: ev.name,
+      detail: ev.detail,
+      cards: cardsLabel(cards),
+      category: ev.category,
+      text: CATEGORY_EXPLANATIONS[ev.category],
+      duplicates: duplicateLabels(cards)
     };
   }
 
@@ -318,6 +357,8 @@
     compareHands: compareHands,
     rangeAgainst: rangeAgainst,
     handStrength: handStrength,
+    explain: explain,
+    duplicateLabels: duplicateLabels,
     probabilityFor: probabilityFor
   };
 });
