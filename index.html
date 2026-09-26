@@ -22,11 +22,10 @@
         <small>Who won? Exact odds inside.</small>
       </span>
     </div>
+    <button id="helpBtn" class="help-btn" type="button" aria-label="How the rules and odds work">?</button>
   </header>
 
   <main id="players" class="players"></main>
-
-  <section id="result" class="panel result" aria-live="polite"></section>
 
   <section class="panel">
     <div class="panel-head">
@@ -36,16 +35,32 @@
     <ul id="history" class="history"></ul>
   </section>
 
+  <section id="result" class="panel result" aria-live="polite"></section>
+
+  <div class="clear-wrap">
+    <button id="clearAllBtn" class="clear-all" type="button">Clear all hands</button>
+  </div>
+
   <div class="add-wrap">
     <button id="addPlayerBtn" class="add-btn" type="button">+ Add player</button>
     <p class="add-hint">Adds another card panel. Every player with 3 cards joins the comparison.</p>
   </div>
 
-  <details class="panel rules">
-    <summary>Rules used</summary>
-    <ol id="rulesList" class="rules-list"></ol>
-    <p class="note">Strongest to weakest. Suits never decide the main pot in Teen Patti — they only split the side pot (Rani).</p>
-  </details>
+  <div class="modal" id="helpModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="modal-head">
+        <h2 id="helpTitle">How this works</h2>
+        <button id="helpClose" class="modal-close" type="button" aria-label="Close">×</button>
+      </div>
+      <h3>Hand strength, strongest first</h3>
+      <ol id="rulesList" class="rules-list"></ol>
+      <p class="note">Suits never decide the main pot in Teen Patti, they only split the side pot (Rani). Two hands with the same ranks are a tie, never a suit winner.</p>
+      <h3>Who actually wins</h3>
+      <p class="note">The winner is decided by the hand ladder above, not by the percentage. The percentage only answers "how strong is this hand against a random one". The two agree almost always, but not always: A-2-3 is a straight that beats 10-10-10 in the game, even though the teen shows a slightly higher number.</p>
+      <h3>The odds are exact</h3>
+      <p class="note">Hand strength checks all 18,424 hands an opponent could be dealt. Head to head checks all 15,180 hands the other player could hold from the 46 cards left once both hands are known. Nothing is sampled or estimated.</p>
+    </div>
+  </div>
 
   <div class="actionbar">
     <button id="compareBtn" class="primary-btn" type="button">Who won?</button>

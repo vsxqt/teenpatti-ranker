@@ -23,8 +23,7 @@
   var refs = {
     players: [],
     result: document.getElementById("result"),
-    mount: document.getElementById("players"),
-    clearBtn: null
+    mount: document.getElementById("players")
   };
 
   function read(key, fallback) {
@@ -234,7 +233,7 @@
 
     var ui = buildPanel(player, index);
     refs.players.push(ui);
-    refs.mount.insertBefore(ui.panel, refs.clearBtn);
+    refs.mount.appendChild(ui.panel);
     syncPanel(index);
     renderResult();
 
@@ -317,6 +316,10 @@
     return player.cards.map(function (card) { return card.rank + card.suit; }).sort().join("|");
   }
 
+  function setBar(node, value) {
+    node.style.transform = "scaleX(" + Math.max(0, Math.min(1, value)) + ")";
+  }
+
   function renderStrength(index) {
     var player = state.players[index];
     var ui = refs.players[index];
@@ -324,7 +327,7 @@
     if (player.cards.length < 3) {
       ui.strengthRow.style.display = "none";
       ui.strengthPct.textContent = "—";
-      ui.strengthFill.style.width = "0%";
+      setBar(ui.strengthFill, 0);
       ui.strengthReason.textContent = "";
       ui.strengthWarn.textContent = "";
       ui.strengthNote.textContent = "Pick " + (3 - player.cards.length) +
@@ -336,7 +339,7 @@
     var why = TP.explain(player.cards);
     ui.strengthRow.style.display = "";
     ui.strengthPct.textContent = pct(strength.pWin);
-    ui.strengthFill.style.width = (strength.pWin * 100).toFixed(2) + "%";
+    setBar(ui.strengthFill, strength.pWin);
     ui.strengthReason.textContent = why.name + " · " + why.detail + " — " + why.text;
     ui.strengthNote.textContent = "of the " + strength.total.toLocaleString("en-US") +
       " hands an opponent could be dealt, plus a " + pct(strength.pTie) + " tie chance.";
@@ -500,14 +503,16 @@
       : '<p class="odds-note">Head-to-head odds need 6 different cards on the table — ' +
         escapeHtml(prob.reason) + "</p>";
 
+    html += '<p class="odds-note">The winner comes from the hand ladder, not the percentage. ' +
+      "The percentage only says how strong a hand looks against a random one.</p>";
+
     refs.result.innerHTML = html;
 
     if (prob.valid) {
       var bars = refs.result.querySelectorAll(".bar span");
-      var values = [prob.pA, prob.pB, prob.pTie];
-      for (var i = 0; i < bars.length; i++) {
-        bars[i].style.width = (values[i] * 100).toFixed(2) + "%";
-      }
+      setBar(bars[0], prob.pA);
+      setBar(bars[1], prob.pB);
+      setBar(bars[2], prob.pTie);
     }
   }
 
@@ -571,18 +576,21 @@
     list.innerHTML = state.history.map(function (item) {
       if (item.type === "hand") {
         return "<li>" +
-          '<span class="who"><span class="kind strength">strength</span> ' +
-          escapeHtml(item.name) + ' <span class="meta">' + escapeHtml(item.cards) + "</span></span>" +
+          '<span><span class="kind strength">strength</span><span class="cards">' +
+          escapeHtml(item.cards) + "</span></span>" +
+          '<span class="who-label">' + escapeHtml(item.name) + "</span>" +
           '<span class="meta">' + escapeHtml(item.hand) + " · " + pct(item.pWin) + "</span>" +
           "</li>";
       }
       var outcome = item.winner === "tie"
         ? "Tie"
         : escapeHtml(item.winner === "A" ? item.a : item.b) + " won";
+      var cards = item.winner === "A" ? item.cardsA : item.cardsB;
       var odds = item.pA === null ? "" : " · " + pct(item.pA) + " / " + pct(item.pB);
       return "<li>" +
-        '<span class="who"><span class="kind match">match</span> ' + outcome +
-        '<span class="meta"> · ' + escapeHtml(item.winner === "A" ? item.cardsA : item.cardsB) + "</span></span>" +
+        '<span><span class="kind match">match</span><span class="cards">' +
+        escapeHtml(cards) + "</span></span>" +
+        '<span class="who-label">' + outcome + "</span>" +
         '<span class="meta">' + escapeHtml(item.handA) + odds + "</span>" +
         "</li>";
     }).join("");
@@ -627,11 +635,6 @@
   }
 
   function init() {
-    refs.clearBtn = el("button", "ghost-btn clear-all", "Clear all hands");
-    refs.clearBtn.type = "button";
-    refs.clearBtn.addEventListener("click", clearAll);
-    refs.mount.appendChild(refs.clearBtn);
-
     var saved = read(KEY_HANDS, null);
     var loaded = 0;
     if (Array.isArray(saved)) {
@@ -664,10 +667,29 @@
       return "<li>" + escapeHtml(rule) + "</li>";
     }).join("");
 
-    var addBtn = document.getElementById("addPlayerBtn");
-    addBtn.addEventListener("click", function () {
+    var modal = document.getElementById("helpModal");
+    var helpBtn = document.getElementById("helpBtn");
+    var closeHelp = function () {
+      modal.hidden = true;
+      helpBtn.focus();
+    };
+    helpBtn.addEventListener("click", function () {
+      modal.hidden = false;
+      document.getElementById("helpClose").focus();
+    });
+    document.getElementById("helpClose").addEventListener("click", closeHelp);
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) closeHelp();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) closeHelp();
+    });
+
+    document.getElementById("addPlayerBtn").addEventListener("click", function () {
       addPlayer(true);
     });
+
+    document.getElementById("clearAllBtn").addEventListener("click", clearAll);
 
     document.getElementById("compareBtn").addEventListener("click", commitResult);
 
