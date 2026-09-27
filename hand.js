@@ -22,23 +22,26 @@
   var CATEGORY = {
     HIGH_CARD: 1,
     PAIR: 2,
-    TENS: 3,
-    STRAIGHT: 4,
-    TRIO: 5
+    FLUSH: 3,
+    TENS: 4,
+    STRAIGHT: 5,
+    TRIO: 6
   };
 
   var CATEGORY_NAMES = {
     1: "High card",
     2: "Pair",
-    3: "Three tens",
-    4: "Straight run",
-    5: "Three of a kind"
+    3: "Flush",
+    4: "Three tens",
+    5: "Straight run",
+    6: "Three of a kind"
   };
 
   var RULES_LADDER = [
-    "Three of a kind (A-A-A is the strongest trio, three tens is the weakest)",
-    "Straight run (A-K-Q, K-Q-A, A-2-3, 2-3-4 and every other run)",
+    "Three of a kind, the strongest hand in the game, nothing beats it",
+    "Sequence, a straight run: A-K-Q, K-Q-A, A-2-3, 2-3-4 and every other run",
     "Three tens, also called Teen",
+    "Flush, three cards of the same suit",
     "Pair",
     "High card"
   ];
@@ -98,6 +101,7 @@
     var name = "";
     var detail = "";
     var phrase = "";
+    var suited = cards[0].suit === cards[1].suit && cards[1].suit === cards[2].suit;
 
     if (high === low) {
       if (high === 10) {
@@ -137,6 +141,14 @@
       name = "Pair";
       detail = rankName(key1) + " with " + rankLabel(key2) + " kicker";
       phrase = "pair of " + detail;
+    } else if (suited) {
+      category = CATEGORY.FLUSH;
+      key1 = high;
+      name = "Flush";
+      detail = cardsLabel(cards.slice().sort(function (a, b) { return b.rank - a.rank; })) +
+        " of " + suitById(cards[0].suit).name.toLowerCase();
+      phrase = "flush of " + suitById(cards[0].suit).name.toLowerCase() + ", " +
+        rankLabel(high) + " high";
     } else {
       category = CATEGORY.HIGH_CARD;
       key1 = high;
@@ -185,10 +197,11 @@
 
   var CATEGORY_EXPLANATIONS = {
     1: "Ranks lowest, so it wins only when the other hand's cards are all lower.",
-    2: "Beats every high card, loses to a sequence or a trio.",
-    3: "Sits below a sequence but above every pair.",
-    4: "Second strongest, only a trio of a kind beats it.",
-    5: "Strongest hand in the game, nothing can beat it."
+    2: "Beats every high card, loses to a flush, a sequence or a trio.",
+    3: "Three of the same suit, so it beats every pair and high card but loses to a sequence or a trio.",
+    4: "Teen, three tens, sits below a sequence but above a flush and every pair.",
+    5: "Second strongest, only a trio of a kind beats it.",
+    6: "Strongest hand in the game, nothing can beat it."
   };
 
   function duplicateLabels(cards) {
@@ -228,6 +241,7 @@
 
   function rangeAgainst(myCards, tableCards) {
     var avail = {};
+    var perSuit = {};
     var seen = {};
     var rank;
     var r1;
@@ -235,12 +249,17 @@
     var r3;
 
     for (rank = 2; rank <= 14; rank++) avail[rank] = 4;
+    for (var s = 0; s < SUITS.length; s++) {
+      perSuit[SUITS[s].id] = {};
+      for (rank = 2; rank <= 14; rank++) perSuit[SUITS[s].id][rank] = 1;
+    }
 
     (tableCards || []).forEach(function (card) {
       var key = cardKey(card);
       if (seen[key]) return;
       seen[key] = true;
       avail[card.rank] -= 1;
+      if (perSuit[card.suit]) perSuit[card.suit][card.rank] -= 1;
     });
 
     var myStrength = evaluate(myCards).strength;
@@ -264,16 +283,45 @@
           }
           if (!ways) continue;
 
-          var opponent = evaluate([
+          var mixed = evaluate([
             { rank: r1, suit: "S" },
             { rank: r2, suit: "H" },
             { rank: r3, suit: "D" }
           ]).strength;
-          var cmp = compareStrength(myStrength, opponent);
-          total += ways;
-          if (cmp > 0) wins += ways;
-          else if (cmp < 0) losses += ways;
-          else ties += ways;
+          var mixedWays = ways;
+          var flushWays = 0;
+          var sameSuit = null;
+
+          if (r1 !== r2 && r2 !== r3) {
+            for (var k = 0; k < SUITS.length; k++) {
+              var counts = perSuit[SUITS[k].id];
+              flushWays += counts[r1] * counts[r2] * counts[r3];
+            }
+            mixedWays = ways - flushWays;
+            if (flushWays) {
+              sameSuit = evaluate([
+                { rank: r1, suit: "S" },
+                { rank: r2, suit: "S" },
+                { rank: r3, suit: "S" }
+              ]).strength;
+            }
+          }
+
+          if (mixedWays) {
+            var cmpMixed = compareStrength(myStrength, mixed);
+            total += mixedWays;
+            if (cmpMixed > 0) wins += mixedWays;
+            else if (cmpMixed < 0) losses += mixedWays;
+            else ties += mixedWays;
+          }
+
+          if (sameSuit) {
+            var cmpFlush = compareStrength(myStrength, sameSuit);
+            total += flushWays;
+            if (cmpFlush > 0) wins += flushWays;
+            else if (cmpFlush < 0) losses += flushWays;
+            else ties += flushWays;
+          }
         }
       }
     }

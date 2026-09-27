@@ -550,7 +550,7 @@
     if (tiedAtTop) {
       reason = "Both top hands are a <b>" + escapeHtml(top.why.name.toLowerCase()) +
         "</b> on the same rank" + (top.why.category === TP.CATEGORY.PAIR || top.why.category === TP.CATEGORY.HIGH_CARD ? "s" : "") +
-        ", and suits do not break a tie in Teen Patti.";
+        ", so the pot is split. Only a flush breaks a tie like this on suit, and neither hand has three cards of one suit.";
     } else {
       reason = "<b>" + escapeHtml(top.why.text) + "</b>";
     }
